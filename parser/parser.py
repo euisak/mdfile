@@ -234,6 +234,27 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
                     step_no += 1
 
                 if remaining > 0 or not closed_any:
+                    # 홀수 런(예: ***)은 먼저 `*` 한 개, 나머지는 `**` 쌍으로 나눕니다.
+                    # 스택이 [*, **](아래→위)가 되면 `***a**b*`에서 닫는 `**`가
+                    # 바로 바깥 볼드를 닫고 이탤릭만 남길 수 있습니다. (이전처럼
+                    # [**, *]이면 `**` 닫기 시 `allow_close_star=False` 때문에
+                    # 위쪽 `*`가 리터럴로 밀려 나가 버립니다.)
+                    if remaining % 2 == 1:
+                        stack.append(MarkerFrame(marker="*", q_start=len(queue)))
+                        remaining -= 1
+                        steps.append(
+                            _snapshot(
+                                step_no=step_no,
+                                at_index=i,
+                                consumed=marker,
+                                action="푸시",
+                                subject_label="스택에 추가된 기호",
+                                subject_value="*",
+                                star_remaining=remaining,
+                                star_total=total,
+                            )
+                        )
+                        step_no += 1
                     while remaining >= 2:
                         stack.append(MarkerFrame(marker="**", q_start=len(queue)))
                         remaining -= 2
@@ -245,22 +266,6 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
                                 action="푸시",
                                 subject_label="스택에 추가된 기호",
                                 subject_value="**",
-                                star_remaining=remaining,
-                                star_total=total,
-                            )
-                        )
-                        step_no += 1
-                    if remaining == 1:
-                        stack.append(MarkerFrame(marker="*", q_start=len(queue)))
-                        remaining -= 1
-                        steps.append(
-                            _snapshot(
-                                step_no=step_no,
-                                at_index=i,
-                                consumed=marker,
-                                action="푸시",
-                                subject_label="스택에 추가된 기호",
-                                subject_value="*",
                                 star_remaining=remaining,
                                 star_total=total,
                             )
