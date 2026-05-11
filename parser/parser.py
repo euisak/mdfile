@@ -27,6 +27,22 @@ def _detect_marker(s: str, i: int) -> Optional[str]:
     return None
 
 
+def _first_star_run_len_after_text(s: str, start: int) -> Optional[int]:
+    """`start`부터 다음 `*` 연속 런의 길이. 없으면 None.
+
+    CommonMark는 `***`를 열 때 뒤에서 **먼저 닫히는 별 런이 `*`인지 `**`인지**에 따라
+    `[**, *]` vs `[*, **]` 중 하나를 택하는데, 여기서는 그 휴리스틱만 흉내 냅니다.
+    (첫 별 런이 `*` 한 개면 볼드가 바깥 `[**, *]`, 그렇지 않으면 이탤릭이 바깥 `[*, **]`.)
+    """
+    pos = start
+    n = len(s)
+    while pos < n and s[pos] != "*":
+        pos += 1
+    if pos >= n:
+        return None
+    return _count_run(s, pos, "*", min(MAX_STAR_RUN, n - pos))
+
+
 def _active_styles(stack: Sequence[MarkerFrame]) -> Tuple[str, ...]:
     # '*'는 '*' 또는 '**' 단위로 스택에 들어올 수 있습니다.
     count_star = sum(
@@ -234,43 +250,77 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
                     step_no += 1
 
                 if remaining > 0 or not closed_any:
-                    # 홀수 런(예: ***)은 먼저 `*` 한 개, 나머지는 `**` 쌍으로 나눕니다.
-                    # 스택이 [*, **](아래→위)가 되면 `***a**b*`에서 닫는 `**`가
-                    # 바로 바깥 볼드를 닫고 이탤릭만 남길 수 있습니다. (이전처럼
-                    # [**, *]이면 `**` 닫기 시 `allow_close_star=False` 때문에
-                    # 위쪽 `*`가 리터럴로 밀려 나가 버립니다.)
-                    if remaining % 2 == 1:
-                        stack.append(MarkerFrame(marker="*", q_start=len(queue)))
-                        remaining -= 1
-                        steps.append(
-                            _snapshot(
-                                step_no=step_no,
-                                at_index=i,
-                                consumed=marker,
-                                action="푸시",
-                                subject_label="스택에 추가된 기호",
-                                subject_value="*",
-                                star_remaining=remaining,
-                                star_total=total,
+                    # `***`만: 뒤에서 첫 별 런이 `*` 한 개면 `[**, *]`(볼드 바깥),
+                    # 아니면 `[*, **]`(이탤릭 바깥)으로 엽니다. (CommonMark 휴리스틱 단순화)
+                    triple_open_handled = False
+                    if total == 3 and remaining == 3:
+                        nxt = _first_star_run_len_after_text(md, i + len(marker))
+                        if nxt == 1:
+                            triple_open_handled = True
+                            stack.append(MarkerFrame(marker="**", q_start=len(queue)))
+                            remaining -= 2
+                            steps.append(
+                                _snapshot(
+                                    step_no=step_no,
+                                    at_index=i,
+                                    consumed=marker,
+                                    action="푸시",
+                                    subject_label="스택에 추가된 기호",
+                                    subject_value="**",
+                                    star_remaining=remaining,
+                                    star_total=total,
+                                )
                             )
-                        )
-                        step_no += 1
-                    while remaining >= 2:
-                        stack.append(MarkerFrame(marker="**", q_start=len(queue)))
-                        remaining -= 2
-                        steps.append(
-                            _snapshot(
-                                step_no=step_no,
-                                at_index=i,
-                                consumed=marker,
-                                action="푸시",
-                                subject_label="스택에 추가된 기호",
-                                subject_value="**",
-                                star_remaining=remaining,
-                                star_total=total,
+                            step_no += 1
+                            stack.append(MarkerFrame(marker="*", q_start=len(queue)))
+                            remaining -= 1
+                            steps.append(
+                                _snapshot(
+                                    step_no=step_no,
+                                    at_index=i,
+                                    consumed=marker,
+                                    action="푸시",
+                                    subject_label="스택에 추가된 기호",
+                                    subject_value="*",
+                                    star_remaining=remaining,
+                                    star_total=total,
+                                )
                             )
-                        )
-                        step_no += 1
+                            step_no += 1
+                    if not triple_open_handled:
+                        # 홀수 런: 먼저 `*` 한 개, 나머지는 `**` 쌍 → `***a**b*` 등
+                        if remaining % 2 == 1:
+                            stack.append(MarkerFrame(marker="*", q_start=len(queue)))
+                            remaining -= 1
+                            steps.append(
+                                _snapshot(
+                                    step_no=step_no,
+                                    at_index=i,
+                                    consumed=marker,
+                                    action="푸시",
+                                    subject_label="스택에 추가된 기호",
+                                    subject_value="*",
+                                    star_remaining=remaining,
+                                    star_total=total,
+                                )
+                            )
+                            step_no += 1
+                        while remaining >= 2:
+                            stack.append(MarkerFrame(marker="**", q_start=len(queue)))
+                            remaining -= 2
+                            steps.append(
+                                _snapshot(
+                                    step_no=step_no,
+                                    at_index=i,
+                                    consumed=marker,
+                                    action="푸시",
+                                    subject_label="스택에 추가된 기호",
+                                    subject_value="**",
+                                    star_remaining=remaining,
+                                    star_total=total,
+                                )
+                            )
+                            step_no += 1
 
                 i += len(marker)
                 continue
