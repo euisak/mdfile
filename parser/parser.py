@@ -173,15 +173,20 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
         return step_no + 1
 
     def flush_queue_range(step_no: int, at_index: int, consumed: str, start: int) -> int:
-        nonlocal tokens_with_pos, queue
+        nonlocal tokens_with_pos, queue, queue_base_pos
         if start < 0:
             start = 0
         if start < len(queue):
             styles = _active_styles(stack)
             kind = _kind_from_styles(styles)
             text = "".join(queue[start:])
+            flushed_len = len(queue) - start
             tokens_with_pos.append((queue_base_pos + start, Token(kind=kind, text=text, styles=styles)))
             del queue[start:]
+            # `flush_queue_all`과 같이, 큐가 비면 다음 글자의 절대 위치를 진행합니다.
+            # 안 하면 토큰 (pos)가 겹쳐 정렬될 때 순서가 원문과 어긋납니다.
+            if not queue:
+                queue_base_pos += start + flushed_len
             steps.append(
                 _snapshot(
                     step_no=step_no,
@@ -248,6 +253,12 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
                         )
                     )
                     step_no += 1
+
+                # 접미사만 flush한 뒤 스택이 비면, 앞에 남은 글자는 더 이상 어떤
+                # 서식에도 속하지 않으므로 즉시 TEXT로 확정합니다. (그렇지 않으면
+                # `*a*` 뒤의 ` and ` 같은 접두가 큐에 쌓여 이후에 한꺼번에 붙습니다.)
+                if not stack and queue:
+                    step_no = flush_queue_all(step_no, i, marker)
 
                 if remaining > 0 or not closed_any:
                     # `***`만: 뒤에서 첫 별 런이 `*` 한 개면 `[**, *]`(볼드 바깥),
@@ -348,6 +359,8 @@ def parse_with_visualization(md: str) -> Tuple[List[Token], List[StepSnapshot]]:
                 )
             )
             step_no += 1
+            if not stack and queue:
+                step_no = flush_queue_all(step_no, i, marker)
             i += len(marker)
             continue
 
