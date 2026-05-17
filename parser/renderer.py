@@ -10,7 +10,7 @@ from .models import Token
 def render_tokens_to_html(tokens: Sequence[Token]) -> str:
     out: List[str] = []
     for t in tokens:
-        esc = html.escape(t.text).replace("\n", "<br/>")
+        esc = html.escape(t.text).replace("\n", "<br/>").replace("*", "&#42;")
         s = set(t.styles)
         if "strike" in s:
             esc = f"<del>{esc}</del>"

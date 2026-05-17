@@ -28,6 +28,6 @@ class StepSnapshot:
 
 @dataclass(frozen=True)
 class MarkerFrame:
-    marker: str  # "*", "**", "_", "~~"
+    marker: str  # "*", "**", "***"(통째 여는 런), "_", "~~"
     q_start: int  # queue index where this marker opened
 
